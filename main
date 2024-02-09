@@ -1,0 +1,76 @@
+import cv2
+import numpy as np
+
+def detect_lines(frame, roi):
+    # Convert the region of interest (ROI) to grayscale
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+   
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+   
+    # Perform edge detection using Canny
+    edges = cv2.Canny(blurred, 50, 150)
+   
+    # Detect lines using Hough transform
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 100, minLineLength=100, maxLineGap=10)
+   
+    if lines is not None:
+        # List to store slopes of detected lines
+        slopes = []
+       
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            # Calculate slope
+            if x2 - x1 != 0:
+                slope = (y2 - y1) / (x2 - x1)
+                slopes.append(slope)
+            # Draw lines on the original frame
+            cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
+       
+        # Check if there are at least two detected lines
+        if len(slopes) >= 2:
+            # Compute the median slope
+            median_slope = np.median(slopes)
+            # Draw a middle line
+            cv2.line(frame, (roi.shape[1] // 2, 0), (roi.shape[1] // 2, roi.shape[0]), (0, 0, 255), 3)
+   
+    return frame
+
+# Initialize the camera
+cap = cv2.VideoCapture(0)
+
+while True:
+    # Capture frame-by-frame
+    ret, frame = cap.read()
+   
+    if not ret:
+        break
+   
+    # Get the dimensions of the frame
+    height, width = frame.shape[:2]
+   
+    # Define the coordinates of the rectangle (ROI)
+    x1 = width // 4
+    y1 = height // 4
+    x2 = width - x1
+    y2 = height - y1
+   
+    # Draw the rectangle on the frame
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+   
+    # Get the region of interest (ROI)
+    roi = frame[y1:y2, x1:x2]
+   
+    # Detect lines in the region of interest
+    frame_with_lines = detect_lines(frame, roi)
+   
+    # Display the resulting frame
+    cv2.imshow('Line Detection', frame_with_lines)
+   
+    # Break the loop when 'q' is pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release the camera and close all windows
+cap.release()
+cv2.destroyAllWindows()
