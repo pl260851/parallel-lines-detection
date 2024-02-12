@@ -1,76 +1,77 @@
 import cv2
 import numpy as np
 
-def detect_lines(frame, roi):
-    # Convert the region of interest (ROI) to grayscale
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-   
-    # Apply Gaussian blur to reduce noise
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-   
-    # Perform edge detection using Canny
-    edges = cv2.Canny(blurred, 50, 150)
-   
-    # Detect lines using Hough transform
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 100, minLineLength=100, maxLineGap=10)
-   
-    if lines is not None:
-        # List to store slopes of detected lines
-        slopes = []
-       
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            # Calculate slope
-            if x2 - x1 != 0:
-                slope = (y2 - y1) / (x2 - x1)
-                slopes.append(slope)
-            # Draw lines on the original frame
-            cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-       
-        # Check if there are at least two detected lines
-        if len(slopes) >= 2:
-            # Compute the median slope
-            median_slope = np.median(slopes)
-            # Draw a middle line
-            cv2.line(frame, (roi.shape[1] // 2, 0), (roi.shape[1] // 2, roi.shape[0]), (0, 0, 255), 3)
-   
-    return frame
+#https://learnopencv.com/edge-detection-using-opencv/
+#https://www.geeksforgeeks.org/line-detection-python-opencv-houghline-method/
+#https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
 
-# Initialize the camera
-cap = cv2.VideoCapture(0)
+# Function to draw a midline between two parallel lines within a specified region on the frame
+def draw_midline_between_parallel_lines(frame, lines, region_of_interest_vertices):
+    if lines is not None:
+        # Draw each detected line on the frame
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
+#https://www.geeksforgeeks.org/program-find-mid-point-line/
+
+        # If at least two lines are detected, calculate and draw the midline
+        if len(lines) >= 2:
+            # Calculate midpoint coordinates for the start and end of the midline
+            x1_mid = int((lines[0][0][0] + lines[1][0][0]) / 2)
+            y1_mid = int((lines[0][0][1] + lines[1][0][1]) / 2)
+            x2_mid = int((lines[0][0][2] + lines[1][0][2]) / 2)
+            y2_mid = int((lines[0][0][3] + lines[1][0][3]) / 2)
+            # Draw the midline in red
+            cv2.line(frame, (x1_mid, y1_mid), (x2_mid, y2_mid), (255, 0, 0), 3)
+
+# Applies a mask to the image to focus processing on a specific region
+#https://pyimagesearch.com/2021/01/19/image-masking-with-opencv/
+def region_of_interest(img, vertices):
+    mask = np.zeros_like(img)  # Create a mask that is the same size as the image
+    cv2.fillPoly(mask, vertices, 255)  # Fill the defined polygon area in the mask with white
+#https://www.geeksforgeeks.org/draw-a-filled-polygon-using-the-opencv-function-fillpoly/
+    masked = cv2.bitwise_and(img, mask)  # Apply the mask to the image
+#https://www.educba.com/opencv-bitwise_and/
+    return masked
+
+# Main image processing function
+def process_image(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # Convert the image to grayscale
+    canny_image = cv2.Canny(gray, 100, 120)  # Apply Canny edge detection
+    rows, cols = img.shape[:2]  # Get the dimensions of the image
+    # Define a square region of interest based on the center of the frame
+    square_size = min(cols, rows) * 0.4
+    center_col, center_row = cols // 2, rows // 2
+    half_square = square_size // 2
+    vertices = np.array([[
+        [center_col - half_square, center_row + half_square],
+        [center_col - half_square, center_row - half_square],
+        [center_col + half_square, center_row - half_square],
+        [center_col + half_square, center_row + half_square]
+    ]], dtype=np.int32)
+    roi_image = region_of_interest(canny_image, vertices)  # Apply the ROI mask to the edge-detected image
+    lines = cv2.HoughLinesP(roi_image, 1, np.pi / 180, threshold=50, minLineLength=100, maxLineGap=50)  # Detect lines within the ROI
+    draw_midline_between_parallel_lines(img, lines, vertices)  # Draw the detected lines and midline on the original frame
+    cv2.polylines(img, vertices, isClosed=True, color=(255, 0, 0), thickness=5)  # Outline the ROI for visualization
+
+# Video capture loop
+cap = cv2.VideoCapture(0)  # Open the default camera
 
 while True:
-    # Capture frame-by-frame
-    ret, frame = cap.read()
-   
+    ret, frame = cap.read()  # Read a frame from the camera
     if not ret:
-        break
-   
-    # Get the dimensions of the frame
-    height, width = frame.shape[:2]
-   
-    # Define the coordinates of the rectangle (ROI)
-    x1 = width // 4
-    y1 = height // 4
-    x2 = width - x1
-    y2 = height - y1
-   
-    # Draw the rectangle on the frame
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-   
-    # Get the region of interest (ROI)
-    roi = frame[y1:y2, x1:x2]
-   
-    # Detect lines in the region of interest
-    frame_with_lines = detect_lines(frame, roi)
-   
-    # Display the resulting frame
-    cv2.imshow('Line Detection', frame_with_lines)
-   
-    # Break the loop when 'q' is pressed
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break  # Exit the loop if no frame is captured
+    frame = process_image(frame)  # Process the captured frame
+    cv2.imshow("Frame", frame)  # Display the processed frame
+    if cv2.waitKey(1) & 0xFF == ord('q'):  # Break the loop if 'q' is pressed
         break
 
-# Release the camera and close all windows
-cap.release()
-cv2.destroyAllWindows()
+cap.release()  # Release the camera
+cv2.destroyAllWindows()  # Close all OpenCV windows
+
+
+
+
+
+
+
